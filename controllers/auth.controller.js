@@ -5,6 +5,7 @@ const uaParser = require('ua-parser-js');
 const { validatePasswordComplexity } = require('../utils/passwordUtils');
 const { sendLoginAlertEmail } = require('../services/mail.service');
 const otpService = require('../services/otp.service');
+const tokenService = require('../services/token.service');
 
 exports.register = async (req, res) => {
   try {
@@ -104,6 +105,9 @@ exports.sendOTP = async (req, res) => {
 
     await user.save();
 
+    console.log('Generated OTP:', otp);
+console.log('User found:', user.email);
+
     console.log(`OTP for ${email}: ${otp}`);
 
     res.json({ message: 'OTP sent to email' });
@@ -136,6 +140,64 @@ exports.verifyOTP = async (req, res) => {
   } catch (err) {
     console.error('Verify OTP error:', err);
     res.status(500).json({ message: 'Failed to verify OTP' });
+  }
+};
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const { rawToken, hashedToken } = tokenService.generateResetToken();
+
+    user.resetPasswordToken = {
+      token: hashedToken,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000)
+    };
+
+    await user.save();
+
+    const resetLink = `http://localhost:4000/api/auth/reset-password/${rawToken}`;
+    console.log(`Password reset link for ${email}: ${resetLink}`);
+
+    res.json({ message: 'Reset password link sent to email' });
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ message: 'Server error during forgot password' });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!validatePasswordComplexity(password)) {
+      return res.status(400).json({ message: 'Password does not meet complexity requirements' });
+    }
+
+    const user = await User.findOne({
+      'resetPasswordToken.expiresAt': { $gt: Date.now() }
+    });
+
+    if (!user || !user.resetPasswordToken.token) {
+      return res.status(400).json({ message: 'Invalid or expired reset token' });
+    }
+
+    const isValid = await tokenService.verifyResetToken(token, user.resetPasswordToken.token);
+    if (!isValid) {
+      return res.status(400).json({ message: 'Invalid or expired reset token' });
+    }
+
+    user.password = password;
+    user.resetPasswordToken = undefined;
+    await user.save();
+
+    res.json({ message: 'Password reset successful' });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ message: 'Failed to reset password' });
   }
 };
 
