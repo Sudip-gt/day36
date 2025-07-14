@@ -6,6 +6,7 @@ const { validatePasswordComplexity } = require('../utils/passwordUtils');
 const { sendLoginAlertEmail } = require('../services/mail.service');
 const otpService = require('../services/otp.service');
 const tokenService = require('../services/token.service');
+const sendOTPEmail = require('../services/email.service');
 
 exports.register = async (req, res) => {
   try {
@@ -105,9 +106,7 @@ exports.sendOTP = async (req, res) => {
 
     await user.save();
 
-    console.log('Generated OTP:', otp);
-console.log('User found:', user.email);
-
+    await sendOTPEmail(email, otp);
     console.log(`OTP for ${email}: ${otp}`);
 
     res.json({ message: 'OTP sent to email' });
